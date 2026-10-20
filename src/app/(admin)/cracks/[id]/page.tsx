@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/admin";
-import { styleInfo, TOPICS } from "@/lib/humor-vocab";
-import Person from "@/components/person";
+import { STYLES, TOPICS } from "@/lib/humor-vocab";
+import Person, { personName } from "@/components/person";
 import Notice from "@/components/notice";
 import type { Profile } from "@/lib/data";
 import CrackForm from "../crack-form";
 import DeleteButton from "../delete-button";
-import { deleteCrack } from "../actions";
+import { clearTags, deleteCrack, saveTags } from "../actions";
 
 const dateTime = (iso: string) =>
   new Date(iso).toLocaleString("en-US", {
@@ -19,7 +19,8 @@ const dateTime = (iso: string) =>
     timeZone: "America/New_York",
   });
 
-// One crack: edit its image and caption, see who liked it, or delete it.
+// One crack: edit its image, caption and humor tags, see who liked it, or
+// delete it.
 export default async function CrackPage({ params, searchParams }: PageProps<"/cracks/[id]">) {
   const { supabase } = await requireAdmin();
   const id = Number((await params).id);
@@ -28,11 +29,17 @@ export default async function CrackPage({ params, searchParams }: PageProps<"/cr
   const [{ data: crack }, { data: likes }, { data: traits }] = await Promise.all([
     supabase.from("cracks").select("id, created_at, img_url, text, creator_id").eq("id", id).maybeSingle(),
     supabase.from("likes").select("liker, liked_at").eq("crack_id", id).order("liked_at", { ascending: false }),
-    supabase.from("crack_traits").select("styles, topics").eq("crack_id", id).maybeSingle(),
+    supabase.from("crack_traits").select("styles, topics, edited_by").eq("crack_id", id).maybeSingle(),
   ]);
   if (!crack) notFound();
 
-  const peopleIds = [...new Set([crack.creator_id, ...(likes ?? []).map((l) => l.liker)].filter(Boolean))];
+  const peopleIds = [
+    ...new Set(
+      [crack.creator_id, traits?.edited_by, ...(likes ?? []).map((l) => l.liker)].filter(Boolean)
+    ),
+  ];
+  const styles: string[] = traits?.styles ?? [];
+  const topics: string[] = traits?.topics ?? [];
   const { data: people } = await supabase
     .from("profiles")
     .select("id, created_at, first_name, last_name, screen_name, profpic, is_superadmin")
@@ -76,34 +83,81 @@ export default async function CrackPage({ params, searchParams }: PageProps<"/cr
           )}
         </div>
 
-        <div className="card flex flex-col gap-3">
-          <h2 className="section-title">Gemini&apos;s tags</h2>
-          {traits ? (
-            <div className="flex flex-wrap gap-1">
-              {traits.styles.map((key: string) => {
-                const style = styleInfo(key);
-                return style ? (
-                  <span key={key} className="rounded-full px-2 py-0.5 text-xs text-white" style={{ backgroundColor: style.color }}>
-                    {style.label}
-                  </span>
-                ) : null;
-              })}
-              {traits.topics.map((key: string) => (
-                <span key={key} className="rounded-full border border-black/15 px-2 py-0.5 text-xs dark:border-white/20">
-                  {TOPICS.find((t) => t.key === key)?.label ?? key}
-                </span>
+        <form action={saveTags} className="card flex flex-col gap-4">
+          <input type="hidden" name="id" value={crack.id} />
+          <div>
+            <h2 className="section-title">Humor tags</h2>
+            <p className="text-xs opacity-75">
+              {!traits
+                ? "Not tagged yet. Pick tags here, or let the meme board ask Gemini in the background."
+                : traits.edited_by
+                  ? `Edited by hand by ${personName(byId.get(traits.edited_by))}. Gemini won't overwrite these.`
+                  : "Tagged by Gemini. Fix them here; hand-edited tags are kept."}
+            </p>
+          </div>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 text-xs font-medium uppercase opacity-75">Styles</legend>
+            <div className="flex flex-wrap gap-2">
+              {STYLES.map((style) => (
+                <label
+                  key={style.key}
+                  style={{ "--chip": style.color } as React.CSSProperties}
+                  className="cursor-pointer rounded-full border border-black/15 px-3 py-1 text-xs transition-colors select-none has-[:checked]:border-[var(--chip)] has-[:checked]:bg-[var(--chip)] has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-title dark:border-white/20"
+                >
+                  <input
+                    type="checkbox"
+                    name="styles"
+                    value={style.key}
+                    defaultChecked={styles.includes(style.key)}
+                    className="sr-only"
+                  />
+                  {style.label}
+                </label>
               ))}
             </div>
-          ) : (
-            <p className="text-sm opacity-75">Not tagged yet. The meme board tags new cracks in the background.</p>
-          )}
-          <div className="mt-auto border-t border-black/10 pt-4 dark:border-white/15">
-            <form action={deleteCrack}>
-              <input type="hidden" name="id" value={crack.id} />
-              <DeleteButton />
-            </form>
+          </fieldset>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 text-xs font-medium uppercase opacity-75">Topics</legend>
+            <div className="flex flex-wrap gap-2">
+              {TOPICS.map((topic) => (
+                <label
+                  key={topic.key}
+                  className="cursor-pointer rounded-full border border-black/15 px-3 py-1 text-xs transition-colors select-none has-[:checked]:border-foreground has-[:checked]:bg-foreground has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-title dark:border-white/20"
+                >
+                  <input
+                    type="checkbox"
+                    name="topics"
+                    value={topic.key}
+                    defaultChecked={topics.includes(topic.key)}
+                    className="sr-only"
+                  />
+                  {topic.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div className="mt-auto flex flex-wrap gap-2">
+            <button type="submit" className="btn-secondary">
+              Save tags
+            </button>
+            {traits && (
+              <button type="submit" formAction={clearTags} className="btn-outline">
+                Clear and let Gemini re-tag
+              </button>
+            )}
           </div>
+        </form>
+      </section>
+
+      <section className="card flex flex-wrap items-center justify-between gap-4 border-red-700/30">
+        <div>
+          <h2 className="section-title">Delete this crack</h2>
+          <p className="text-xs opacity-75">Removes it from the board along with its likes. This can&apos;t be undone.</p>
         </div>
+        <form action={deleteCrack}>
+          <input type="hidden" name="id" value={crack.id} />
+          <DeleteButton />
+        </form>
       </section>
     </>
   );

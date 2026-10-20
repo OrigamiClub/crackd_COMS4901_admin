@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/admin";
 import { callGemini } from "@/lib/gemini";
 import { checkImage, fetchOwnCrackImage, OWN_CRACK_IMAGE_PREFIX } from "@/lib/images";
-import { STYLES, STYLE_KEYS } from "@/lib/humor-vocab";
+import { STYLES, STYLE_KEYS, TOPIC_KEYS } from "@/lib/humor-vocab";
 import type { CaptionOption } from "@/lib/data";
 
 type Supabase = Awaited<ReturnType<typeof requireAdmin>>["supabase"];
@@ -205,4 +205,49 @@ export async function deleteCrack(formData: FormData) {
 
   revalidatePath("/", "layout");
   redirect(`/cracks?notice=deleted`);
+}
+
+// Replaces a crack's humor tags by hand. Only keys from the fixed
+// vocabulary are kept. Rows marked edited_by are left alone by the meme
+// board's Gemini tagger.
+export async function saveTags(formData: FormData) {
+  const { supabase, user } = await requireAdmin();
+
+  const id = Number(formData.get("id"));
+  const styles = [...new Set(formData.getAll("styles").map(String))].filter((key) =>
+    STYLE_KEYS.includes(key)
+  );
+  const topics = [...new Set(formData.getAll("topics").map(String))].filter((key) =>
+    TOPIC_KEYS.includes(key)
+  );
+
+  const { error } = await supabase.from("crack_traits").upsert({
+    crack_id: id,
+    styles,
+    topics,
+    edited_by: user.id,
+    tagged_at: new Date().toISOString(),
+  });
+  if (error) {
+    console.error("Couldn't save tags", error);
+    redirect(`/cracks/${id}?notice=tags-failed`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(`/cracks/${id}?notice=tags-saved`);
+}
+
+// Removes a crack's tags so the meme board has Gemini tag it again.
+export async function clearTags(formData: FormData) {
+  const { supabase } = await requireAdmin();
+
+  const id = Number(formData.get("id"));
+  const { error } = await supabase.from("crack_traits").delete().eq("crack_id", id);
+  if (error) {
+    console.error("Couldn't clear tags", error);
+    redirect(`/cracks/${id}?notice=tags-failed`);
+  }
+
+  revalidatePath("/", "layout");
+  redirect(`/cracks/${id}?notice=tags-cleared`);
 }

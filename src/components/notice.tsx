@@ -1,9 +1,15 @@
-// One-line confirmation after a create, update or delete redirects back
+// One-line confirmation after a change redirects back
 // with ?notice=...
 const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   created: { text: "Crack posted." },
   updated: { text: "Changes saved." },
   deleted: { text: "Crack deleted." },
+  "admin-granted": { text: "Admin access granted." },
+  "admin-removed": { text: "Admin access removed." },
+  "admin-failed": { text: "Couldn't change admin status. Is the latest admin migration applied?", error: true },
+  "tags-saved": { text: "Tags saved." },
+  "tags-cleared": { text: "Tags cleared. The meme board will ask Gemini to tag this crack again." },
+  "tags-failed": { text: "Couldn't save the tags. Is the latest admin migration applied?", error: true },
   "delete-failed": { text: "Couldn't delete that crack. Is the admin migration applied?", error: true },
 };
 

@@ -44,6 +44,8 @@ export type Traits = {
   crack_id: number;
   styles: string[];
   topics: string[];
+  // Set when an admin edited the tags by hand.
+  edited_by: string | null;
 };
 
 function check<T>(result: { data: T[] | null; error: { message: string } | null }, what: string) {
@@ -74,7 +76,7 @@ export async function loadAll(supabase: SupabaseClient) {
       .from("caption_requests")
       .select("id, user_id, created_at, direction, options, chosen_index, crack_id")
       .order("created_at", { ascending: false }),
-    supabase.from("crack_traits").select("crack_id, styles, topics"),
+    supabase.from("crack_traits").select("crack_id, styles, topics, edited_by"),
   ]);
 
   return {
